@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>The Battle of a Trillion Nguyen Minh Duc — Simulation</title>
+  <style>
+    :root{--bg:#0b1020;--card:#0f1724;--accent:#7ef9ff;--muted:#94a3b8}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#061226 0%,#07121a 100%);font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    .app{max-width:1100px;margin:18px auto;padding:18px;color:#e6eef6}
+    header{display:flex;gap:16px;align-items:center}
+    h1{margin:0;font-size:20px}
+    .card{background:rgba(255,255,255,0.03);padding:12px;border-radius:12px;box-shadow:0 6px 24px rgba(2,6,23,0.6)}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    button{background:var(--accent);border:none;padding:8px 12px;border-radius:10px;color:#001;cursor:pointer;font-weight:700}
+    input[type=range]{width:220px}
+    .row{display:flex;gap:12px;margin-top:12px}
+    .panel{flex:1;min-width:280px}
+    canvas{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));width:100%;height:420px;border-radius:10px;display:block}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+    .stat{background:rgba(255,255,255,0.02);padding:8px;border-radius:8px}
+    .log{height:140px;overflow:auto;background:rgba(0,0,0,0.12);padding:8px;border-radius:8px;font-family:monospace;font-size:12px}
+    footer{margin-top:12px;color:var(--muted);font-size:13px}
+    label{font-size:13px;color:var(--muted)}
+    select, input[type=number]{padding:6px;border-radius:8px;border:none;background:rgba(255,255,255,0.02);color:inherit}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="card">
+        <h1>The Battle of a Trillion Nguyen Minh Duc — Simulation</h1>
+        <div style="font-size:12px;color:var(--muted)">Auto-battle simulation: aggregated population model with special abilities: Super speed, Mega intellect, Data beam.</div>
+      </div>
+    </header>
+
+    <div class="controls">
+      <button id="startBtn">Start</button>
+      <button id="pauseBtn">Pause</button>
+      <button id="resetBtn">Reset</button>
+
+      <label style="display:flex;align-items:center;gap:8px;color:var(--muted)">Simulation speed
+        <input id="speedRange" type="range" min="0.1" max="5" step="0.1" value="1">
+      </label>
+
+      <label style="display:flex;align-items:center;gap:8px;color:var(--muted)">Population (raw)
+        <input id="popInput" type="text" value="1000000000000" style="width:170px;margin-left:6px">
+      </label>
+
+      <label style="display:flex;align-items:center;gap:8px;color:var(--muted)">Grouping
+        <select id="grouping">
+          <option value="1e6">aggregate per 1,000,000</option>
+          <option value="1e9">aggregate per 1,000,000,000</option>
+          <option value="1e12" selected>aggregate per 1,000,000,000,000</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="row">
+      <div class="panel card">
+        <canvas id="battleCanvas" width="900" height="420"></canvas>
+        <div class="stats" id="statsArea">
+          <div class="stat">Population (visible groups): <div id="popVisible">-</div></div>
+          <div class="stat">Time ticks: <div id="ticks">0</div></div>
+          <div class="stat">Alive groups: <div id="aliveGroups">-</div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:6px">Abilities (applied to each Nguyen Minh Duc)</div>
+          <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Each unit has three abilities — the simulation uses aggregated probabilities scaled by population groups.</div>
+
+          <div style="margin-bottom:8px">
+            <label>Super speed (attack frequency multiplier): <input id="speedMul" type="number" value="1.5" step="0.1" style="width:80px;margin-left:8px"></label>
+          </div>
+          <div style="margin-bottom:8px">
+            <label>Mega intellect (damage multiplier / evasion): <input id="intMul" type="number" value="1.4" step="0.1" style="width:80px;margin-left:8px"></label>
+          </div>
+          <div style="margin-bottom:8px">
+            <label>Data beam (chance of area effect per tick %): <input id="beamChance" type="number" value="3" step="0.5" style="width:80px;margin-left:8px">%</label>
+          </div>
+
+          <div style="margin-top:10px">
+            <button id="applyBtn">Apply Parameters</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <div style="font-weight:700;margin-bottom:6px">Battle log</div>
+          <div class="log" id="log"></div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <div style="font-weight:700;margin-bottom:6px">Quick actions</div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="spawnVisual">Spawn visual clash</button>
+            <button id="chaosMode">Chaos mode</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer>Tip: the simulation uses an aggregated model to represent huge populations (so it runs smoothly). Adjust grouping to change granularity.</footer>
+  </div>
+
+<script>
+// --- Aggregated auto-battle sim ---
+const canvas = document.getElementById('battleCanvas');
+const ctx = canvas.getContext('2d');
+let running = false;
+let ticks = 0;
+let dt = 1; // tick multiplier
+
+const state = {
+  totalRaw: BigInt(1000000000000), // 1 trillion default
+  groupSize: 1e12, // how many raw -> one group
+  groups: [], // array of group objects {id, countGroups, alive:true}
+  params: {speedMul:1.5, intMul:1.4, beamChance:0.03}
+};
+
+// initialize groups from raw population
+function initGroups() {
+  const raw = state.totalRaw;
+  const gsize = BigInt(Math.round(state.groupSize));
+  // number of groups = ceil(raw / gsize)
+  let nGroups = Number(raw / gsize);
+  if (raw % gsize !== 0n) nGroups += 1;
+  // cap visible groups for UI convenience
+  state.groups = [];
+  for (let i=0;i<nGroups;i++) {
+    state.groups.push({id:i, alive:true, strength:1});
+  }
+}
+
+// parse user input population (allow big ints)
+function parseRawPop(str) {
+  try {
+    // remove commas and spaces
+    const cleaned = str.replace(/[,_\s]/g, '');
+    // if contains 'e' or too long, use BigInt approximation
+    if (/e/i.test(cleaned)) {
+      // handle like 1e12
+      const parts = cleaned.split(/e/i);
+      const base = parseFloat(parts[0]);
+      const exp = parseInt(parts[1],10);
+      const val = BigInt(Math.round(base * Math.pow(10, exp)));
+      return val;
+    }
+    return BigInt(cleaned);
+  } catch(e) {
+    return state.totalRaw;
+  }
+}
+
+function resetSimulation() {
+  const rawInput = document.getElementById('popInput').value;
+  state.totalRaw = parseRawPop(rawInput);
+  state.groupSize = parseFloat(document.getElementById('grouping').value);
+  initGroups();
+  ticks = 0;
+  draw();
+  logEvent(`Simulation reset. Raw population: ${state.totalRaw.toString()}`);
+}
+
+function applyParams() {
+  state.params.speedMul = parseFloat(document.getElementById('speedMul').value) || 1.0;
+  state.params.intMul = parseFloat(document.getElementById('intMul').value) || 1.0;
+  state.params.beamChance = (parseFloat(document.getElementById('beamChance').value) || 0)/100.0;
+  logEvent(`Parameters applied — speed x${state.params.speedMul}, intellect x${state.params.intMul}, beam ${Math.round(state.params.beamChance*1000)/10}% chance`);
+}
+
+// Basic aggregated combat model per tick:
+// - Each alive group generates 'attack power' proportional to speedMul
+// - Random pairings cause casualties proportional to attack power and intMul
+// - Data beam triggers occasionally, removing a small fraction of groups
+// Model intentionally simple but non-linear so results evolve unpredictably.
+
+function simTick() {
+  ticks += 1;
+  const groups = state.groups.filter(g=>g.alive);
+  const G = groups.length;
+  if (G <= 1) { running = false; return; }
+
+  // total attack potential
+  const speed = state.params.speedMul;
+  const intellect = state.params.intMul;
+  const baseAttack = G * speed * 0.5;
+
+  // expected casualties (groups) this tick — scaled by intellect and randomness
+  let expectedCasualties = Math.max(0, Math.round(baseAttack / (10 * intellect)));
+
+  // Data beam: sometimes causes an area-effect spike
+  if (Math.random() < state.params.beamChance) {
+    const beamHit = Math.max(1, Math.round(G * 0.015)); // 1.5% of groups wiped
+    expectedCasualties += beamHit;
+    spawnVisualBurst('beam', beamHit);
+    logEvent(`Data beam triggered! ~${beamHit} groups affected.`);
+  }
+
+  // Chaos noise
+  const noise = Math.round((Math.random()-0.45) * Math.sqrt(G));
+  expectedCasualties += noise;
+  expectedCasualties = Math.max(0, Math.min(G-1, expectedCasualties));
+
+  // remove groups
+  for (let i=0;i<expectedCasualties;i++) {
+    // pick random alive group and mark dead
+    const idx = Math.floor(Math.random()*state.groups.length);
+    // find next alive
+    let j=0;
+    while(j<state.groups.length && !state.groups[idx]) { j++; }
+    // find alive random
+    const aliveList = state.groups.filter(g=>g.alive);
+    if (aliveList.length===0) break;
+    const victim = aliveList[Math.floor(Math.random()*aliveList.length)];
+    victim.alive = false;
+  }
+
+  // occasionally spawn visual clashes
+  if (Math.random() < 0.25) spawnVisualBurst('clash', Math.max(1, Math.round(G*0.002)));
+
+  // update UI
+  updateUI();
+}
+
+// Visual particle engine for representing clashes
+const visuals = [];
+function spawnVisualBurst(type, magnitude) {
+  /* type: 'clash' or 'beam' */
+  const cx = Math.random()*canvas.width;
+  const cy = Math.random()*canvas.height;
+  for (let i=0;i<Math.min(300, magnitude*6); i++) {
+    visuals.push({x:cx, y:cy, vx:(Math.random()-0.5)*6, vy:(Math.random()-0.5)*6, life:30 + Math.random()*40, type});
+  }
+}
+
+function draw() {
+  // clear
+  ctx.fillStyle = 'rgba(6,10,30,0.35)';
+  ctx.fillRect(0,0,canvas.width, canvas.height);
+
+  // draw grid of groups as small dots
+  const cols = 40;
+  const rows = 12;
+  const gapX = canvas.width/cols;
+  const gapY = canvas.height/rows;
+  let idx=0;
+  for (let r=0;r<rows;r++){
+    for (let c=0;c<cols;c++){
+      if (idx >= state.groups.length) break;
+      const g = state.groups[idx];
+      const x = c*gapX + gapX*0.5;
+      const y = r*gapY + gapY*0.5;
+      const alive = g.alive;
+      ctx.beginPath();
+      ctx.arc(x,y,alive?3:1.2,0,Math.PI*2);
+      ctx.fillStyle = alive? (g.strength>0? 'rgba(126,249,255,0.95)':'rgba(160,160,160,0.5)') : 'rgba(80,80,100,0.18)';
+      ctx.fill();
+      idx++;
+    }
+  }
+
+  // draw visuals
+  for (let i=visuals.length-1;i>=0;i--) {
+    const p = visuals[i];
+    p.x += p.vx; p.y += p.vy; p.life -= 1 + Math.random()*1.2;
+    ctx.beginPath();
+    const s = Math.max(1, p.life/12);
+    if (p.type==='beam') ctx.fillStyle = `rgba(180,120,255,${Math.max(0, p.life/80)})`;
+    else ctx.fillStyle = `rgba(200,250,255,${Math.max(0, p.life/60)})`;
+    ctx.arc(p.x,p.y,s,0,Math.PI*2);
+    ctx.fill();
+    if (p.life<=0) visuals.splice(i,1);
+  }
+
+  // overlay text
+  ctx.fillStyle = 'rgba(200,230,255,0.9)';
+  ctx.font = '12px ui-sans-serif';
+  ctx.fillText(`Groups total: ${state.groups.length}`, 10, 18);
+  ctx.fillText(`Alive groups: ${state.groups.filter(g=>g.alive).length}`, 10, 34);
+  ctx.fillText(`Tick: ${ticks}`, 10, 50);
+}
+
+function updateUI() {
+  document.getElementById('ticks').innerText = ticks;
+  const visible = state.groups.length;
+  document.getElementById('popVisible').innerText = `${visible} groups (groupSize=${state.groupSize})`;
+  document.getElementById('aliveGroups').innerText = state.groups.filter(g=>g.alive).length;
+}
+
+// animation loop
+function loop() {
+  if (running) {
+    for (let i=0;i<Math.max(1, Math.round(dt)); i++) simTick();
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// tiny logger
+function logEvent(msg) {
+  const l = document.getElementById('log');
+  const time = new Date().toLocaleTimeString();
+  l.innerText = `[${time}] ${msg}\n` + l.innerText;
+  while (l.scrollHeight > 400) l.innerText = l.innerText.split('\n').slice(0,200).join('\n');
+}
+
+// buttons
+document.getElementById('startBtn').addEventListener('click',()=>{ running=true; logEvent('Simulation started.'); });
+document.getElementById('pauseBtn').addEventListener('click',()=>{ running=false; logEvent('Simulation paused.'); });
+document.getElementById('resetBtn').addEventListener('click',()=>{ running=false; resetSimulation(); });
+document.getElementById('applyBtn').addEventListener('click',()=>{ applyParams(); });
+document.getElementById('speedRange').addEventListener('input',(e)=>{ dt = parseFloat(e.target.value); });
+
+document.getElementById('grouping').addEventListener('change',()=>{ state.groupSize = parseFloat(document.getElementById('grouping').value); resetSimulation(); });
+
+document.getElementById('spawnVisual').addEventListener('click',()=>{ spawnVisualBurst('clash', 120); });
+document.getElementById('chaosMode').addEventListener('click', ()=>{ // Sudden chaos: random beam flood
+  for (let i=0;i<5;i++) {
+    setTimeout(()=>{ spawnVisualBurst('beam', Math.round(Math.random()*60)); logEvent('Chaos beam!'); }, i*300);
+  }
+});
+
+// initial setup
+(function(){
+  // read inputs
+  const raw = parseRawPop(document.getElementById('popInput').value);
+  state.totalRaw = raw;
+  state.groupSize = parseFloat(document.getElementById('grouping').value);
+  applyParams();
+  initGroups();
+  updateUI();
+  draw();
+  loop();
+})();
+
+</script>
+</body>
+</html>
